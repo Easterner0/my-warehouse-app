@@ -1,6 +1,6 @@
 {
-  "name": "مدیریت انبار توپچی",
-  "short_name": "توپچی",
+  "name": "toopchiwarehouse",
+  "short_name": "toopchi",
   "start_url": "/my-warehouse-app/optimized-warehouse-app.html",
   "display": "standalone",
   "background_color": "#ffffff",
