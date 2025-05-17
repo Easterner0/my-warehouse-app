@@ -19,7 +19,7 @@
     /*
     ,
     {
-      "src": "/my-warehouse-app/icon-512.png", // مسیر را بر اساس محل واقعی فایل تنظیم کنید
+      "src": "/my-warehouse-app/icon-192.png", // مسیر را بر اساس محل واقعی فایل تنظیم کنید
       "sizes": "192x192",
       "type": "image/png"
     },
