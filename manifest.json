@@ -7,29 +7,24 @@
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "/my-warehouse-app/Toopchi.jpg",
+      "src": "/my-warehouse-app/icon-512.png",
       "sizes": "512x512",
-      "type": "image/jpeg"
-      // PWABuilder needs size information. Assuming 512x512 based on requirements.
-      // You should verify the actual size of Toopchi.jpg and put that in "sizes".
-      // Also, image/jpeg is for .jpg files.
+      "type": "image/png",
+      "purpose": "any"
     }
-    // It's highly recommended to include other sizes and a PNG version (especially 512x512 PNG maskable)
-    // For example:
+    // توصیه می‌شود برای سازگاری بهتر با دستگاه‌ها و پوشش ماسک‌های مختلف،
+    // آیکون‌های دیگری با اندازه‌های مختلف (مثلاً 192x192)
+    // و نسخه "maskable" آیکون 512x512 را هم اضافه کنید.
+    // مثال:
     /*
     ,
     {
-      "src": "/my-warehouse-app/icons/icon-192.png",
+      "src": "/my-warehouse-app/icons/icon-192.png", // مسیر را بر اساس محل واقعی فایل تنظیم کنید
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/my-warehouse-app/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    },
-     {
-      "src": "/my-warehouse-app/icons/icon-maskable-512.png",
+      "src": "/my-warehouse-app/icons/icon-maskable-512.png", // مسیر را بر اساس محل واقعی فایل تنظیم کنید
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
