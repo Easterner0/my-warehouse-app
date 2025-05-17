@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>انبارداری ساده</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="/icons/icon-192.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    import Chart from 'https://cdn.jsdelivr.net/npm/chart.js@4.3.0/+esm';
+
+    const SUPABASE_URL = 'https://jipispxhttbmzuvppube.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImppcGlzcHhodHRibXp1dnBwdWJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcwNjA3OTcsImV4cCI6MjA2MjYzNjc5N30.TR6Po7mjBaSzWBAJb-NgBi1xIR3892mCMrPjUeNBY14';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // DOM Elements
+    const loginSection = document.getElementById('loginSection');
+    const appSection = document.getElementById('app');
+    const loginForm = document.getElementById('loginForm');
+    const roleInput = document.getElementById('roleInput');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const inventoryTableBody = document.getElementById('inventoryTableBody');
+    const reportBody = document.getElementById('reportBody');
+    const reportDatePicker = document.getElementById('reportDate');
+    const reportBtn = document.getElementById('reportBtn');
+    const reportMonthPicker = document.getElementById('reportMonth');
+    const reportMonthBtn = document.getElementById('reportMonthBtn');
+    const reportPersonSelect = document.getElementById('reportPersonSelect');
+    const reportItemSelect = document.getElementById('reportItemSelect');
+    const tabs = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    // Remember last selected user
+    let lastSelectedUserId = '';
+
+    // Auto login check
+    function checkLogin() {
+      const role = localStorage.getItem('userRole');
+      if (role === 'admin' || role === 'viewer') {
+        loginSection.classList.add('hidden');
+        appSection.classList.remove('hidden');
+        document.getElementById('stockInForm').classList.toggle('hidden', role === 'viewer');
+        document.getElementById('stockOutForm').classList.toggle('hidden', role === 'viewer');
+        logoutBtn.classList.remove('hidden');
+        renderAll();
+      } else {
+        loginSection.classList.remove('hidden');
+        appSection.classList.add('hidden');
+        logoutBtn.classList.add('hidden');
+      }
+    }
+
+    // Login/Logout Logic
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const role = roleInput.value.trim().toLowerCase();
+      if (role === 'admin' || role === 'viewer') {
+        localStorage.setItem('userRole', role);
+        checkLogin();
+      } else {
+        alert('نقش وارد شده فقط می‌تواند admin یا viewer باشد.');
+      }
+    });
+
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('userRole');
+      checkLogin();
+    });
+
+    // Tab Navigation
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.getAttribute('data-target');
+        
+        tabs.forEach(t => t.classList.remove('bg-blue-600', 'text-white'));
+        tab.classList.add('bg-blue-600', 'text-white');
+        
+        tabContents.forEach(content => {
+          content.classList.add('hidden');
+        });
+        
+        document.getElementById(target).classList.remove('hidden');
+      });
+    });
+
+    // Inventory Management Functions
+    async function renderAll() {
+      await loadItemsToSelect();
+      await loadUsersToSelect();
+      await renderLiveInventory();
+      await renderOutChart();
+    }
+
+    const itemSelect = document.getElementById('itemSelect');
+    const itemOutSelect = document.getElementById('itemOutSelect');
+    const userSelect = document.getElementById('userSelect');
+    const stockInForm = document.getElementById('stockInForm');
+    const stockOutForm = document.getElementById('stockOutForm');
+    const stockInQuantity = document.getElementById('stockInQuantity');
+    const stockOutQuantity = document.getElementById('stockOutQuantity');
+
+    async function loadItemsToSelect() {
+      const { data, error } = await supabase.from('items').select('id, name');
+      if (error) return alert('خطا در دریافت اجناس');
+      
+      const options = data.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+      itemSelect.innerHTML = options;
+      itemOutSelect.innerHTML = options;
+      reportItemSelect.innerHTML = '<option value="">همه اجناس</option>' + options;
+    }
+
+    async function loadUsersToSelect() {
+      const { data, error } = await supabase.from('users').select('id, name');
+      if (error) return alert('خطا در دریافت کاربران');
+      
+      const options = data.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+      userSelect.innerHTML = options;
+      reportPersonSelect.innerHTML = '<option value="">همه افراد</option>' + options;
+      
+      // Set the previously selected user if available
+      if (lastSelectedUserId) {
+        userSelect.value = lastSelectedUserId;
+      }
+    }
+
+    async function renderLiveInventory() {
+      const { data, error } = await supabase.from('items').select('name, quantity, unit');
+      if (error) return alert('خطا در دریافت موجودی');
+      
+      inventoryTableBody.innerHTML = data.map(item => `
+        <tr class="border-b hover:bg-gray-50">
+          <td class="px-4 py-2">${item.name}</td>
+          <td class="px-4 py-2">${item.quantity}</td>
+          <td class="px-4 py-2">${item.unit}</td>
+        </tr>
+      `).join('');
+    }
+
+    stockInForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const itemId = itemSelect.value;
+      const quantity = parseInt(stockInQuantity.value);
+      
+      if (!itemId || !quantity || quantity < 1) return alert('ورودی نامعتبر است');
+      
+      await supabase.from('stock_in').insert([{ item_id: itemId, quantity }]);
+      await supabase.rpc('increment_item_quantity', { item_id_input: itemId, qty_input: quantity });
+      
+      alert('ثبت با موفقیت انجام شد');
+      stockInForm.reset();
+      renderAll();
+    });
+
+    stockOutForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const itemId = itemOutSelect.value;
+      const userId = userSelect.value;
+      const quantity = parseInt(stockOutQuantity.value);
+      
+      if (!itemId || !userId || !quantity || quantity < 1) return alert('ورودی نامعتبر است');
+      
+      await supabase.from('stock_out').insert([{ item_id: itemId, user_id: userId, quantity }]);
+      await supabase.rpc('decrement_item_quantity', { item_id_input: itemId, qty_input: quantity });
+      
+      // Save the last selected user ID
+      lastSelectedUserId = userId;
+      
+      alert('ثبت خروج انجام شد');
+      // Reset form but keep user selection
+      itemOutSelect.selectedIndex = 0;
+      stockOutQuantity.value = '';
+      
+      renderLiveInventory();
+      renderOutChart();
+    });
+
+    async function renderOutChart() {
+      const { data, error } = await supabase
+        .from('stock_out')
+        .select('quantity, timestamp, item_id, items(name)')
+        .order('timestamp', { ascending: false });
+        
+      if (error) return console.error(error);
+      
+      const grouped = {};
+      for (const row of data) {
+        const name = row.items?.name || 'نامشخص';
+        grouped[name] = (grouped[name] || 0) + row.quantity;
+      }
+      
+      const ctx = document.getElementById('outChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(grouped),
+          datasets: [{ 
+            label: 'خروج کل', 
+            data: Object.values(grouped), 
+            backgroundColor: '#f87171' 
+          }]
+        },
+        options: { 
+          responsive: true, 
+          plugins: { legend: { display: false } } 
+        }
+      });
+    }
+
+    // Report Functions 
+    reportBtn.addEventListener('click', async () => {
+      reportBody.innerHTML = '';
+      const selectedDate = reportDatePicker.value;
+      
+      if (!selectedDate) {
+        return alert('لطفا یک تاریخ انتخاب کنید');
+      }
+      
+      const start = new Date(selectedDate);
+      const end = new Date(selectedDate);
+      end.setDate(end.getDate() + 1);
+      
+      const from = start.toISOString();
+      const to = end.toISOString();
+      
+      const selectedPerson = reportPersonSelect.value;
+      const selectedItem = reportItemSelect.value;
+      
+      let outQuery = supabase
+        .from('stock_out')
+        .select('quantity, timestamp, item_id, user_id, items(name), users(name)')
+        .gte('timestamp', from)
+        .lt('timestamp', to);
+        
+      if (selectedPerson) {
+        outQuery = outQuery.eq('user_id', selectedPerson);
+      }
+      
+      if (selectedItem) {
+        outQuery = outQuery.eq('item_id', selectedItem);
+      }
+      
+      const { data: outs } = await outQuery;
+      
+      // Group by user for better organization
+      const groupedByUser = {};
+      const summaryOut = {};
+      
+      outs?.forEach(row => {
+        const user = row.users?.name || 'نامشخص';
+        const item = row.items?.name || 'کالا';
+        
+        if (!groupedByUser[user]) groupedByUser[user] = [];
+        groupedByUser[user].push(row);
+        
+        summaryOut[item] = (summaryOut[item] || 0) + row.quantity;
+      });
+      
+      // Display grouped data
+      for (const [user, records] of Object.entries(groupedByUser)) {
+        reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-gray-200 px-4 py-2'>${user}</td></tr>`;
+        
+        records.forEach(row => {
+          reportBody.innerHTML += `
+            <tr class="border-b hover:bg-gray-50">
+              <td class="px-4 py-2">${row.items?.name || '-'}</td>
+              <td class="px-4 py-2">${row.users?.name || '-'}</td>
+              <td class="px-4 py-2">${row.quantity}</td>
+              <td class="px-4 py-2">${new Date(row.timestamp).toLocaleDateString('fa-IR')} (خروج)</td>
+            </tr>`;
+        });
+      }
+      
+      // Get stock in data for the selected date
+      let inQuery = supabase
+        .from('stock_in')
+        .select('quantity, timestamp, item_id, items(name)')
+        .gte('timestamp', from)
+        .lt('timestamp', to);
+        
+      if (selectedItem) {
+        inQuery = inQuery.eq('item_id', selectedItem);
+      }
+      
+      const { data: ins } = await inQuery;
+      
+      const summaryIn = {};
+      
+      ins?.forEach(row => {
+        reportBody.innerHTML += `
+          <tr class="border-b hover:bg-gray-50">
+            <td class="px-4 py-2">${row.items?.name || '-'}</td>
+            <td class="px-4 py-2">-</td>
+            <td class="px-4 py-2">${row.quantity}</td>
+            <td class="px-4 py-2">${new Date(row.timestamp).toLocaleDateString('fa-IR')} (ورود)</td>
+          </tr>`;
+          
+        const item = row.items?.name || 'کالا';
+        summaryIn[item] = (summaryIn[item] || 0) + row.quantity;
+      });
+      
+      // Summary sections
+      if (Object.keys(summaryOut).length > 0) {
+        reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-yellow-100 text-center'>خلاصه خروجی</td></tr>`;
+        
+        for (const [item, qty] of Object.entries(summaryOut)) {
+          reportBody.innerHTML += `<tr class="border-b text-sm text-red-600">
+            <td class="px-4 py-1">${item}</td><td colspan="2"></td><td class="px-4 py-1">${qty} خروج</td>
+          </tr>`;
+        }
+      }
+      
+      if (Object.keys(summaryIn).length > 0) {
+        reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-green-100 text-center'>خلاصه ورودی</td></tr>`;
+        
+        for (const [item, qty] of Object.entries(summaryIn)) {
+          reportBody.innerHTML += `<tr class="border-b text-sm text-green-700">
+            <td class="px-4 py-1">${item}</td><td colspan="2"></td><td class="px-4 py-1">${qty} ورود</td>
+          </tr>`;
+        }
+      }
+      
+      if (reportBody.innerHTML === '') {
+        reportBody.innerHTML = `<tr><td colspan="4" class="text-center py-4">هیچ داده‌ای برای این تاریخ یافت نشد</td></tr>`;
+      }
+    });
+    
+    // Monthly report function
+    reportMonthBtn.addEventListener('click', async () => {
+      reportBody.innerHTML = '';
+      const selectedMonth = reportMonthPicker.value;
+      
+      if (!selectedMonth) {
+        return alert('لطفا یک ماه انتخاب کنید');
+      }
+      
+      const [year, month] = selectedMonth.split('-');
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+      
+      const from = startDate.toISOString();
+      const to = new Date(year, month, 1).toISOString();
+      
+      const selectedPerson = reportPersonSelect.value;
+      const selectedItem = reportItemSelect.value;
+      
+      // Monthly summary report
+      let monthlyOutQuery = supabase
+        .from('stock_out')
+        .select('quantity, items(name), users(name)')
+        .gte('timestamp', from)
+        .lt('timestamp', to);
+        
+      if (selectedPerson) {
+        monthlyOutQuery = monthlyOutQuery.eq('user_id', selectedPerson);
+      }
+      
+      if (selectedItem) {
+        monthlyOutQuery = monthlyOutQuery.eq('item_id', selectedItem);
+      }
+      
+      const { data: monthOut } = await monthlyOutQuery;
+      
+      let monthlyInQuery = supabase
+        .from('stock_in')
+        .select('quantity, items(name)')
+        .gte('timestamp', from)
+        .lt('timestamp', to);
+        
+      if (selectedItem) {
+        monthlyInQuery = monthlyInQuery.eq('item_id', selectedItem);
+      }
+      
+      const { data: monthIn } = await monthlyInQuery;
+      
+      // Process monthly data
+      const monthlyByUser = {};
+      const monthlyByItem = {};
+      
+      monthOut?.forEach(row => {
+        const user = row.users?.name || 'نامشخص';
+        const item = row.items?.name || 'کالا';
+        
+        if (!monthlyByUser[user]) {
+          monthlyByUser[user] = {};
+        }
+        
+        if (!monthlyByUser[user][item]) {
+          monthlyByUser[user][item] = 0;
+        }
+        
+        monthlyByUser[user][item] += row.quantity;
+        
+        if (!monthlyByItem[item]) {
+          monthlyByItem[item] = 0;
+        }
+        
+        monthlyByItem[item] += row.quantity;
+      });
+      
+      const monthlyInSummary = {};
+      
+      monthIn?.forEach(row => {
+        const item = row.items?.name || 'کالا';
+        monthlyInSummary[item] = (monthlyInSummary[item] || 0) + row.quantity;
+      });
+      
+      // Generate monthly report
+      reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-blue-200 text-center'>گزارش ماهانه: ${startDate.toLocaleDateString('fa-IR')} تا ${endDate.toLocaleDateString('fa-IR')}</td></tr>`;
+      
+      if (Object.keys(monthlyByUser).length > 0) {
+        reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-red-200 text-center'>خروجی به تفکیک افراد</td></tr>`;
+        
+        for (const [user, items] of Object.entries(monthlyByUser)) {
+          reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-gray-200 px-4 py-2'>${user}</td></tr>`;
+          
+          for (const [item, quantity] of Object.entries(items)) {
+            reportBody.innerHTML += `<tr class="border-b text-sm">
+              <td class="px-4 py-1">${item}</td><td colspan="2"></td><td class="px-4 py-1">${quantity} خروج</td>
+            </tr>`;
+          }
+        }
+        
+        reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-red-200 text-center'>خلاصه خروجی ماهانه</td></tr>`;
+        
+        for (const [item, quantity] of Object.entries(monthlyByItem)) {
+          reportBody.innerHTML += `<tr class="border-b text-sm text-red-800">
+            <td class="px-4 py-1">${item}</td><td colspan="2"></td><td class="px-4 py-1">${quantity} خروج</td>
+          </tr>`;
+        }
+      }
+      
+      if (Object.keys(monthlyInSummary).length > 0) {
+        reportBody.innerHTML += `<tr><td colspan='4' class='font-bold bg-green-200 text-center'>خلاصه ورودی ماهانه</td></tr>`;
+        
+        for (const [item, quantity] of Object.entries(monthlyInSummary)) {
+          reportBody.innerHTML += `<tr class="border-b text-sm text-green-800">
+            <td class="px-4 py-1">${item}</td><td colspan="2"></td><td class="px-4 py-1">${quantity} ورود</td>
+          </tr>`;
+        }
+      }
+      
+      if (reportBody.innerHTML === '' || reportBody.innerHTML.includes('گزارش ماهانه') && Object.keys(monthlyByUser).length === 0 && Object.keys(monthlyInSummary).length === 0) {
+        reportBody.innerHTML = `<tr><td colspan="4" class="text-center py-4">هیچ داده‌ای برای این ماه یافت نشد</td></tr>`;
+      }
+    });
+
+    // Initialize app
+    checkLogin();
+    reportDatePicker.valueAsDate = new Date();
+    
+    const today = new Date();
+    reportMonthPicker.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    
+    // Load the last selected user from localStorage if available
+    const savedUserId = localStorage.getItem('lastSelectedUserId');
+    if (savedUserId) {
+      lastSelectedUserId = savedUserId;
+    }
+    
+    // Save the last selected user to localStorage when window unloads
+    window.addEventListener('beforeunload', () => {
+      if (lastSelectedUserId) {
+        localStorage.setItem('lastSelectedUserId', lastSelectedUserId);
+      }
+    });
+  </script>
+  <style>
+    body { font-family: 'Vazirmatn', sans-serif; }
+    .tab-btn { transition: all 0.3s ease; }
+    .tab-btn:hover { background-color: #dbeafe; }
+  </style>
+</head>
+<body class="bg-gray-100 p-4">
+  <div class="max-w-5xl mx-auto">
+    <header class="text-center mb-6">
+      <h1 class="text-3xl font-bold">مدیریت انبار</h1>
+      <button id="logoutBtn" class="hidden bg-gray-300 px-3 py-1 rounded text-sm mt-2">خروج</button>
+    </header>
+
+    <!-- Login Section -->
+    <section id="loginSection" class="bg-white p-6 rounded shadow text-center mb-6">
+      <h2 class="text-xl font-bold mb-4">ورود به سیستم</h2>
+      <form id="loginForm" class="flex flex-col sm:flex-row justify-center gap-4">
+        <input id="roleInput" type="text" placeholder="admin یا viewer" class="p-2 border rounded w-full sm:w-1/2" required>
+        <button class="bg-blue-600 text-white px-4 py-2 rounded">ورود</button>
+      </form>
+    </section>
+
+    <!-- Main Application -->
+    <main id="app" class="hidden">
+      <!-- Tab Navigation -->
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button class="tab-btn px-4 py-2 rounded-t-lg border-b-2 bg-blue-600 text-white" data-target="inventoryTab">موجودی انبار</button>
+        <button class="tab-btn px-4 py-2 rounded-t-lg border-b-2" data-target="inOutTab">ورود و خروج کالا</button>
+        <button class="tab-btn px-4 py-2 rounded-t-lg border-b-2" data-target="reportTab">گزارش‌گیری</button>
+      </div>
+
+      <!-- Inventory Tab -->
+      <div id="inventoryTab" class="tab-content bg-white p-4 rounded shadow mb-6">
+        <h2 class="text-xl font-bold mb-4">موجودی زنده انبار</h2>
+        <table class="w-full text-right">
+          <thead>
+            <tr class="border-b font-semibold">
+              <th class="px-4 py-2">نام کالا</th>
+              <th class="px-4 py-2">موجودی</th>
+              <th class="px-4 py-2">واحد</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTableBody"></tbody>
+        </table>
+        
+        <div class="mt-6">
+          <h2 class="text-xl font-bold mb-4"> اجناس</h2>
+          <canvas id="outChart" height="300"></canvas>
+        </div>
+      </div>
+
+      <!-- In/Out Tab -->
+      <div id="inOutTab" class="tab-content hidden">
+        <div class="bg-white p-4 rounded shadow mb-4">
+          <h2 class="text-xl font-bold mb-4">ورود کالا به انبار</h2>
+          <form id="stockInForm" class="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div class="flex-1">
+              <label class="block mb-1">نام کالا</label>
+              <select id="itemSelect" class="w-full border rounded p-2" required></select>
+            </div>
+            <div>
+              <label class="block mb-1">تعداد</label>
+              <input type="number" id="stockInQuantity" class="w-full border rounded p-2" min="1" required>
+            </div>
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">ثبت</button>
+          </form>
+        </div>
+
+        <div class="bg-white p-4 rounded shadow">
+          <h2 class="text-xl font-bold mb-4">خروج کالا از انبار</h2>
+          <form id="stockOutForm" class="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div class="flex-1">
+              <label class="block mb-1">نام کالا</label>
+              <select id="itemOutSelect" class="w-full border rounded p-2" required></select>
+            </div>
+            <div class="flex-1">
+              <label class="block mb-1">دریافت‌کننده</label>
+              <select id="userSelect" class="w-full border rounded p-2" required></select>
+            </div>
+            <div>
+              <label class="block mb-1">تعداد</label>
+              <input type="number" id="stockOutQuantity" class="w-full border rounded p-2" min="1" required>
+            </div>
+            <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded">ثبت</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Report Tab -->
+      <div id="reportTab" class="tab-content hidden">
+        <div class="bg-white p-4 rounded shadow mb-6">
+          <h2 class="text-xl font-bold mb-4">فیلترهای گزارش</h2>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block mb-1">شخص دریافت‌کننده</label>
+              <select id="reportPersonSelect" class="w-full border rounded p-2">
+                <option value="">همه افراد</option>
+              </select>
+            </div>
+            <div>
+              <label class="block mb-1">کالا</label>
+              <select id="reportItemSelect" class="w-full border rounded p-2">
+                <option value="">همه اجناس</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block mb-1">گزارش روزانه</label>
+              <div class="flex gap-2">
+                <input type="date" id="reportDate" class="flex-1 border rounded p-2">
+                <button id="reportBtn" class="bg-blue-600 text-white px-4 py-2 rounded">نمایش</button>
+              </div>
+            </div>
+            <div>
+              <label class="block mb-1">گزارش ماهانه</label>
+              <div class="flex gap-2">
+                <input type="month" id="reportMonth" class="flex-1 border rounded p-2">
+                <button id="reportMonthBtn" class="bg-blue-600 text-white px-4 py-2 rounded">نمایش</button>
+              </div>
+            </div>
+          </div>
+        </div>
+          
+        <div class="bg-white p-4 rounded shadow overflow-x-auto">
+          <h2 class="text-xl font-bold mb-4">نتایج گزارش</h2>
+          <table class="w-full text-right">
+            <thead>
+              <tr class="border-b font-semibold">
+                <th class="px-4 py-2">نام کالا</th>
+                <th class="px-4 py-2">دریافت‌کننده</th>
+                <th class="px-4 py-2">تعداد</th>
+                <th class="px-4 py-2">تاریخ</th>
+              </tr>
+            </thead>
+            <tbody id="reportBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
