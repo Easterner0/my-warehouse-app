@@ -1,0 +1,12 @@
+{
+  "name": "توپچی انبار",
+  "short_name": "توپچی",
+  "start_url": "/my-warehouse-app/optimized-warehouse-app.html",
+  "icons": [
+    {
+      "src": "/my-warehouse-app/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
